@@ -119,6 +119,9 @@ h1,h2,h3{text-wrap:balance;margin:0}
 .sync .dot{width:6px;height:6px;border-radius:50%;background:var(--ink-3)}
 .sync[data-state="cloud"] .dot{background:var(--accent)}
 .sync[data-state="local"] .dot{background:var(--c-orange)}
+.sync[data-tap="1"]{cursor:pointer;transition:background .12s ease,transform .1s ease}
+.sync[data-tap="1"]:active{background:var(--surface-2);transform:scale(.96)}
+.sync .sync-re{font-size:12px;line-height:1;color:var(--ink-3);margin-left:1px}
 
 .screen[hidden]{display:none !important}
 .sect{margin-top:22px}
@@ -1501,7 +1504,46 @@ window.addEventListener("unhandledrejection", function(e){
 });
 
 /* ================= PWA ================= */
-/* 只在非 Artifact 环境注册：Artifact 是被框住的，也没有这些文件。 */
+/* 主屏启动的 PWA 没有地址栏，也就没有刷新按钮。万一卡在旧版本上，
+   这个徽标是唯一的自救入口。只在非 Artifact 环境挂上。 */
+function forceUpdate(){
+  if(navigator.onLine === false){
+    toast("现在离线，联网后再试", null);   /* 离线时清缓存会让应用彻底打不开 */
+    return;
+  }
+  setSync("pending", "更新中");
+  var jobs = [];
+  if("serviceWorker" in navigator){
+    jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+      return Promise.all(rs.map(function(r){ return r.update()["catch"](function(){}); }));
+    })["catch"](function(){}));
+  }
+  if(window.caches){
+    jobs.push(caches.keys().then(function(ks){
+      return Promise.all(ks.map(function(k){ return caches["delete"](k); }));
+    })["catch"](function(){}));
+  }
+  setTimeout(function(){ location.reload(); }, 4000);   /* 卡住也别让它转圈 */
+  Promise.all(jobs).then(function(){ location.reload(); },
+                         function(){ location.reload(); });
+}
+
+if(!(window.claude && typeof window.claude.use === "function")){
+  var badge = $("sync");
+  if(badge){
+    badge.setAttribute("role", "button");
+    badge.setAttribute("tabindex", "0");
+    badge.setAttribute("data-tap", "1");
+    badge.setAttribute("title", "点一下强制拿最新版");
+    badge.setAttribute("aria-label", "同步状态，点击强制拿最新版");
+    badge.insertAdjacentHTML("beforeend", '<span class="sync-re" aria-hidden="true">↻</span>');
+    badge.addEventListener("click", forceUpdate);
+    badge.addEventListener("keydown", function(e){
+      if(e.key === "Enter" || e.key === " "){ e.preventDefault(); forceUpdate(); }
+    });
+  }
+}
+
 if(!(window.claude && typeof window.claude.use === "function") && "serviceWorker" in navigator){
   window.addEventListener("load", function(){
     navigator.serviceWorker.register("./sw.js").then(function(reg){
