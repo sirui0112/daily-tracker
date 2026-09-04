@@ -1,0 +1,12 @@
+# 导出的记录数据属于健康信息，永远不要提交
+*export*.json
+*export*.csv
+dump*.json
+migrate*.json
+seed*.sql
+.env
+.env.*
+
+.DS_Store
+__pycache__/
+*.pyc
