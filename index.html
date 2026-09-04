@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F7F4">
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121513">
@@ -15,7 +15,19 @@
 body{margin:0}
 img{max-width:100%}
 [hidden]{display:none !important}
+/* 关掉缩放：双击缩放靠 touch-action，捏合靠下面那段手势拦截；
+   text-size-adjust 防止 iOS 横屏时自动放大正文。 */
+html{touch-action:manipulation;-webkit-text-size-adjust:100%}
 </style>
+<script>
+/* iOS Safari 自 iOS 10 起故意无视 user-scalable=no，只能拦手势事件。
+   主屏 standalone 模式下 meta 是生效的，浏览器里打开则靠这段兜底。 */
+(function(){
+  ["gesturestart","gesturechange","gestureend"].forEach(function(t){
+    document.addEventListener(t, function(e){ e.preventDefault(); }, {passive:false});
+  });
+})();
+</script>
 <title>生活流水账</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

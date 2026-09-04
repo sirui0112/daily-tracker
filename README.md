@@ -62,6 +62,11 @@ GitHub Pages，从 `main` 分支根目录直接部署，没有 CI。`index.html`
 主屏启动的 PWA 没有地址栏也就没有刷新按钮，卡在旧版本时这是唯一的自救入口。
 离线时点它会拒绝执行——那时候清缓存会让应用彻底打不开。Artifact 版不加这个（徽标仍是纯展示）。
 
+Pages 版关掉了页面缩放（三处配合：viewport 的 `user-scalable=no` 管主屏 standalone 模式，
+`touch-action:manipulation` 管双击缩放，拦 `gesturestart` 管捏合——iOS Safari 自 iOS 10 起
+故意无视 `user-scalable=no`，光靠 meta 是不够的）。这些都写在 `build.py` 注入的外壳里，
+`src/app.html` 不含任何相关代码，所以 Artifact 版从构造上就不受影响。
+
 **iOS 注意**：主屏应用的存储空间和 Safari 可能是分开的，所以要装就一开始装，别先在 Safari 里记一堆再添加。
 
 ## 后续

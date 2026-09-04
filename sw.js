@@ -4,7 +4,7 @@
  * 旧缓存在 activate 时清掉——所以不需要手工维护版本号，也就忘不掉。
  * 这是缓存优先策略最经典的翻车点：忘了改版本号，用户会永远停在旧版本上。
  */
-const BUILD = "819197dc09c7";
+const BUILD = "e0aadcafae16";
 const CACHE = "daily-tracker-" + BUILD;
 
 const SHELL = [
