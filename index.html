@@ -302,6 +302,15 @@ h1,h2,h3{text-wrap:balance;margin:0}
 .iconbtn:disabled{opacity:.28;cursor:default}
 .iconbtn.warn{color:var(--danger)}
 .about{margin-top:14px;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--surface);font-size:13px;color:var(--ink-2)}
+.hint{margin:10px 2px 0;font-size:12px;line-height:1.65;color:var(--ink-3)}
+.hint b{color:var(--ink-2);font-weight:500}
+.jsonbox{
+  width:100%;min-height:130px;padding:10px 12px;border-radius:11px;border:1px solid var(--line);
+  background:var(--surface);outline:none;resize:vertical;
+  font-family:"IBM Plex Mono",ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;
+  word-break:break-all;
+}
+.jsonbox:focus{border-color:var(--accent)}
 .about dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}
 .about dt{color:var(--ink-3);font-size:12px}
 .about dd{margin:0;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -479,6 +488,15 @@ h1,h2,h3{text-wrap:balance;margin:0}
       <div class="rows" id="itemRows"></div>
     </div>
     <div class="sect">
+      <div class="sect-head"><span class="eyebrow">备份</span></div>
+      <div class="btnrow" style="margin-top:0">
+        <button class="btn" id="exportBtn">导出</button>
+        <button class="btn" id="importBtn">导入</button>
+      </div>
+      <p class="hint" id="backupHint"></p>
+    </div>
+
+    <div class="sect">
       <div class="sect-head"><span class="eyebrow">这个本子</span></div>
       <div class="about">
         <dl>
@@ -581,7 +599,8 @@ var state = {
   viewDate: todayKey(),
   range: 14,
   db: null,
-  syncPushed: false
+  syncPushed: false,
+  lastExport: null
 };
 var lastAction = null, toastTimer = null;
 
@@ -592,10 +611,11 @@ function loadLocal(){
     var o = JSON.parse(raw);
     if(o && Array.isArray(o.items) && o.items.length) state.items = o.items;
     if(o && o.days && typeof o.days === "object") state.days = o.days;
+    if(o && typeof o.lastExport === "number") state.lastExport = o.lastExport;
   }catch(e){}
 }
 function saveLocal(){
-  try{ localStorage.setItem(LS, JSON.stringify({items:state.items, days:state.days})); }catch(e){}
+  try{ localStorage.setItem(LS, JSON.stringify({items:state.items, days:state.days, lastExport:state.lastExport})); }catch(e){}
 }
 
 /* Snapshots delivered by db are FROZEN. Never keep one in state — every later
@@ -971,6 +991,19 @@ function renderMe(){
   $("statDays").textContent = dayCount + " 天";
   $("statFirst").textContent = first ? first : "——";
   $("statSync").textContent = state.db ? "云端 · 多设备同步" : "仅这台设备";
+
+  var hint = $("backupHint");
+  if(hint){
+    if(state.db){
+      hint.innerHTML = "数据已经在云端了，导出主要用来搬到别的地方。";
+    } else if(!state.lastExport){
+      hint.innerHTML = "记录只存在这台设备的浏览器里，<b>没有任何备份</b>。清掉浏览器数据就没了，建议先导出一份存着。";
+    } else {
+      var days = Math.floor((Date.now() - state.lastExport) / 86400000);
+      hint.innerHTML = "上次导出：<b>" + (days === 0 ? "今天" : days + " 天前") + "</b>。"
+                     + (days >= 7 ? "有点久了，建议再导一份。" : "");
+    }
+  }
   $("syncNote").textContent = state.db
     ? "记录存在这个 Artifact 的云端数据库里，手机和电脑打开同一个链接看到的是同一份。本机也留了一份缓存，断网时照样能记。"
     : "记录保存在这台设备的浏览器里。换一台设备看不到这份数据，清掉浏览器数据也会丢失。跨设备同步还没做。";
@@ -1100,6 +1133,140 @@ function pickerSheet(dateKey){
   });
 }
 
+/* ================= sheet: 导出 / 导入 ================= */
+function dataStats(items, days){
+  var nd = 0, ne = 0, k, id;
+  for(k in days){ nd++; for(id in days[k].events) ne++; }
+  return (items ? items.length + " 个项目 · " : "") + nd + " 天 · " + ne + " 条记录";
+}
+function canDownload(){ return !(window.claude && typeof window.claude.use === "function"); }
+
+function exportSheet(){
+  var payload = JSON.stringify({v:1, exportedAt:new Date().toISOString(),
+                                items:state.items, days:state.days});
+  var h = '<h2 id="sheetTitle">导出数据</h2>'
+        + '<p class="sub">' + esc(dataStats(state.items, state.days)) + '。复制走存到备忘录或网盘，被清掉时能恢复。</p>'
+        + '<div class="field"><textarea class="jsonbox" id="expText" readonly></textarea></div>'
+        + '<div class="btnrow">'
+        +   '<button class="btn" id="expCopy">复制</button>'
+        +   (canDownload() ? '<button class="btn" id="expDl">存成文件</button>' : '')
+        +   '<button class="btn primary" id="expDone">完成</button>'
+        + '</div>';
+  openSheet(h, function(){
+    $("expText").value = payload;   /* 用 value 赋值，不走 HTML 转义 */
+    $("expCopy").addEventListener("click", function(){
+      function fallback(){
+        var el = $("expText"); el.focus(); el.select();
+        try{ document.execCommand("copy"); toast("已复制", null); }
+        catch(e){ toast("复制失败，请手动全选复制", null); }
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(payload)
+          .then(function(){ toast("已复制", null); })["catch"](fallback);
+      } else fallback();
+      markExported();
+    });
+    if($("expDl")) $("expDl").addEventListener("click", function(){
+      try{
+        var blob = new Blob([payload], {type:"application/json"});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = "daily-tracker-" + todayKey() + ".json";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        markExported();
+      }catch(e){ toast("这个环境不支持下载，请用复制", null); }
+    });
+    $("expDone").addEventListener("click", closeSheet);
+  });
+}
+function markExported(){ state.lastExport = Date.now(); saveLocal(); if(state.view==="me") renderMe(); }
+
+/* 解析并校验导入内容；有任何问题就抛错，绝不半途写坏现有数据 */
+function parseImport(txt){
+  var o;
+  try{ o = JSON.parse(txt); }
+  catch(e){ throw new Error("内容不完整或不是导出的格式，检查一下是不是复制漏了"); }
+  if(!o || typeof o !== "object" || Array.isArray(o)) throw new Error("不是有效的备份格式");
+  var items = null;
+  if(Array.isArray(o.items) && o.items.length) items = o.items.map(normalizeItem);
+  var days = {}, nd = 0, ne = 0, k, id;
+  if(o.days && typeof o.days === "object"){
+    for(k in o.days){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+      var src = cloneEvents(((o.days[k] || {}).events) || {}), keep = {}, cnt = 0;
+      for(id in src){
+        if(typeof src[id].ts !== "number" || !src[id].itemId) continue;  /* 坏条目直接跳过 */
+        keep[id] = src[id]; cnt++;
+      }
+      if(!cnt) continue;
+      days[k] = {date:k, events:keep}; nd++; ne += cnt;
+    }
+  }
+  if(!items && !nd) throw new Error("里面既没有项目也没有记录");
+  return {items:items, days:days, nDays:nd, nEvents:ne};
+}
+
+function importSheet(){
+  var h = '<h2 id="sheetTitle">导入数据</h2>'
+        + '<p class="sub">把导出的内容粘进来</p>'
+        + '<div class="field"><textarea class="jsonbox" id="impText" placeholder="粘贴导出的内容…"></textarea></div>'
+        + '<p class="hint" id="impInfo">等待粘贴…</p>'
+        + '<div class="btnrow">'
+        +   '<button class="btn" id="impCancel">取消</button>'
+        +   '<button class="btn" id="impMerge" disabled>合并</button>'
+        +   '<button class="btn primary" id="impReplace" disabled>替换</button>'
+        + '</div>'
+        + '<p class="hint"><b>合并</b>：保留本机现有记录，把导入的加进来；同一条记录以导入的为准。跨设备搬数据用这个。<br>'
+        + '<b>替换</b>：清空本机现有数据，完全用导入的替代。恢复备份用这个。</p>';
+  openSheet(h, function(){
+    var parsed = null;
+    function check(){
+      var txt = ($("impText").value || "").trim();
+      var ok = false;
+      if(!txt){ $("impInfo").textContent = "等待粘贴…"; }
+      else {
+        try{
+          parsed = parseImport(txt);
+          $("impInfo").textContent = "识别到 " + dataStats(parsed.items, parsed.days);
+          ok = true;
+        }catch(e){
+          parsed = null;
+          $("impInfo").textContent = "读不出来：" + (e && e.message ? e.message : "格式不对");
+        }
+      }
+      $("impMerge").disabled = !ok; $("impReplace").disabled = !ok;
+    }
+    $("impText").addEventListener("input", check);
+    $("impCancel").addEventListener("click", closeSheet);
+    function apply(mode){
+      if(!parsed) return;
+      if(mode === "replace"){
+        if(parsed.items) state.items = parsed.items;
+        state.days = {};
+      } else if(parsed.items){
+        /* 合并：导入的项目为准，本机独有的保留在后面 */
+        var seen = {};
+        parsed.items.forEach(function(it){ seen[it.id] = true; });
+        state.items = parsed.items.concat(state.items.filter(function(it){ return !seen[it.id]; }));
+      }
+      var k, id, touched = [];
+      for(k in parsed.days){
+        var tgt = ensureMutableDay(k), src = parsed.days[k].events;
+        for(id in src) tgt.events[id] = src[id];
+        touched.push(k);
+      }
+      writeItems();                                   /* 有云端的话顺便推上去 */
+      touched.forEach(function(x){ writeDay(x); });
+      closeSheet(); render();
+      toast("已导入 " + parsed.nEvents + " 条记录", null);
+    }
+    $("impMerge").addEventListener("click", function(){ apply("merge"); });
+    $("impReplace").addEventListener("click", function(){ apply("replace"); });
+    check();
+  });
+}
+
 /* ================= sheet: 项目编辑 ================= */
 function itemSheet(itemId){
   var editing = !!itemId;
@@ -1212,6 +1379,8 @@ document.addEventListener("click", function(ev){
     if(e) logSheet(e.itemId, {editing:{k:parts[0], id:parts[1]}});
     return;
   }
+  if(t.closest("#exportBtn")){ exportSheet(); return; }
+  if(t.closest("#importBtn")){ importSheet(); return; }
   if(t.closest("#addFromGrid") || t.closest("#newItemBtn")){ itemSheet(null); return; }
   if(t.closest("#backfillBtn")){ pickerSheet(state.viewDate); return; }
   if((el = t.closest("[data-goto]"))){ setView(el.getAttribute("data-goto")); return; }
