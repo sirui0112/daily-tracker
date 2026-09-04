@@ -1,0 +1,16 @@
+{
+  "name": "生活流水账",
+  "short_name": "流水账",
+  "description": "记录吃药、喝水、买菜这类日常小事",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F7F4",
+  "theme_color": "#F6F7F4",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

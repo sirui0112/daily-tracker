@@ -4,7 +4,7 @@
 Artifact 发布时平台会自动补上 <!doctype>/<head>/<body>，所以 src/app.html
 里没有这些标签；部署到 Pages 就需要自己补。改完 src/app.html 后重跑本脚本。
 """
-import io, json, os, re
+import hashlib, io, json, os, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 src = io.open(os.path.join(HERE, "src", "app.html"), encoding="utf-8").read()
@@ -32,6 +32,13 @@ out = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F7F4">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121513">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="流水账">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
 /* 平台在 Artifact 里注入的基础重置，本地要自己补上 */
 body{margin:0}
@@ -47,3 +54,16 @@ img{max-width:100%}
 """
 io.open(os.path.join(HERE, "index.html"), "w", encoding="utf-8").write(out)
 print("index.html 已生成：%d 字节" % len(out))
+
+# Service Worker 的缓存名跟着 index.html 的内容哈希走。手工维护版本号迟早会忘，
+# 忘了的话缓存优先策略会让所有人永远停在旧版本上，而且很难发现。
+digest = hashlib.sha256(out.encode("utf-8")).hexdigest()[:12]
+sw_path = os.path.join(HERE, "sw.js")
+sw = io.open(sw_path, encoding="utf-8").read()
+sw2, n = re.subn(r'const BUILD = "[^"]*";', 'const BUILD = "%s";' % digest, sw, count=1)
+assert n == 1, "sw.js 里没找到 BUILD 常量"
+if sw2 != sw:
+    io.open(sw_path, "w", encoding="utf-8").write(sw2)
+    print("sw.js 缓存版本 -> %s" % digest)
+else:
+    print("sw.js 缓存版本未变（%s）" % digest)

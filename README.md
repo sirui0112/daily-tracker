@@ -25,7 +25,9 @@ python3 -m http.server 8000
 # 然后打开 http://localhost:8000/
 ```
 
-`build.py` 做两件事：把初始项目配置写进 `defaultItems()`，以及给 `src/app.html` 套上 `<!doctype html>` / `<head>` / `<body>` 外壳。
+`build.py` 做三件事：把初始项目配置写进 `defaultItems()`；给 `src/app.html` 套上 `<!doctype html>` / `<head>` / `<body>` 外壳；把生成结果的内容哈希写进 `sw.js` 的缓存名。
+
+最后一条是刻意的——Service Worker 用缓存优先策略，**版本号忘了改，所有人会永远停在旧版本上**，而且很难发现。让哈希自动跟着内容走，就忘不掉。
 
 之所以需要套壳，是因为这个应用最早是作为 Claude Artifact 写的，那个平台会自动注入文档骨架，所以源文件里没有这些标签。同一份源码现在同时能在两个环境跑：
 
@@ -40,8 +42,17 @@ python3 -m http.server 8000
 
 GitHub Pages，从 `main` 分支根目录直接部署，没有 CI。`index.html` 提交进仓库，推上去就生效。
 
+## PWA
+
+已经是可安装的 PWA：手机浏览器打开 → 分享 → 添加到主屏幕，之后从图标启动是全屏的，**断网也能打开**（前提是联网打开过至少一次）。
+
+- `manifest.json` — 应用名、图标、`display: standalone`
+- `sw.js` — 缓存应用外壳和 Google Fonts；缓存名由 `build.py` 注入
+- `tools/make-icons.py` — 纯 Python 生成图标，无第三方依赖，改了配色重跑即可
+
+**iOS 注意**：主屏应用的存储空间和 Safari 可能是分开的，所以要装就一开始装，别先在 Safari 里记一堆再添加。
+
 ## 后续
 
 - [ ] 跨设备同步
-- [ ] PWA（manifest + service worker，加主屏、离线可用）
 - [ ] 定时提醒（吃药这类）

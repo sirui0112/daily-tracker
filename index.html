@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#F6F7F4">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121513">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="流水账">
+<link rel="apple-touch-icon" href="icon-180.png">
 <style>
 /* 平台在 Artifact 里注入的基础重置，本地要自己补上 */
 body{margin:0}
@@ -1337,6 +1344,30 @@ window.addEventListener("unhandledrejection", function(e){
   var r = e && e.reason;
   toast("写入失败 · " + ((r && (r.code || r.message)) || "未知"), null);
 });
+
+/* ================= PWA ================= */
+/* 只在非 Artifact 环境注册：Artifact 是被框住的，也没有这些文件。 */
+if(!(window.claude && typeof window.claude.use === "function") && "serviceWorker" in navigator){
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("./sw.js").then(function(reg){
+      reg.addEventListener("updatefound", function(){
+        var w = reg.installing;
+        if(!w) return;
+        w.addEventListener("statechange", function(){
+          /* 有 controller 才说明是"更新"而不是"首次安装"。不自动刷新——
+             你可能正记到一半，页面突然重载会很烦。 */
+          if(w.state === "installed" && navigator.serviceWorker.controller){
+            toast("应用已更新，下次打开生效", null);
+          }
+        });
+      });
+    })["catch"](function(){});
+  });
+  /* 申请持久化存储：iOS 会清理长期未访问站点的数据 */
+  if(navigator.storage && navigator.storage.persist){
+    navigator.storage.persist()["catch"](function(){});
+  }
+}
 
 /* ================= boot ================= */
 loadLocal();
