@@ -14,9 +14,9 @@ ITEMS = [
   {"id":"med","emoji":"💊","name":"吃药","color":"red","unit":"","presets":[{"label":"早","value":None},{"label":"晚","value":None}],"goal":2,"archived":False},
   {"id":"water","emoji":"💧","name":"喝水","color":"blue","unit":"ml","presets":[{"label":"200","value":200},{"label":"300","value":300}],"goal":2000,"archived":False},
   {"id":"cmtlblbfc","emoji":"🥛","name":"吸奶","color":"aqua","unit":"ml","presets":[{"label":"30","value":30}],"goal":None,"archived":False},
-  {"id":"poop","emoji":"💩","name":"拉粑粑","color":"yellow","unit":"","presets":[{"label":"正常","value":None},{"label":"偏稀","value":None}],"goal":None,"archived":False},
-  {"id":"buy","emoji":"🛒","name":"买菜","color":"green","unit":"SGD","presets":[{"label":"30","value":30},{"label":"60","value":60}],"goal":None,"archived":False},
-  {"id":"move","emoji":"🏃","name":"散步","color":"orange","unit":"分钟","presets":[{"label":"30","value":30},{"label":"60","value":60}],"goal":None,"archived":False},
+  {"id":"poop","emoji":"🚽","name":"拉粑粑","color":"yellow","unit":"","presets":[{"label":"正常","value":None},{"label":"偏稀","value":None}],"goal":None,"archived":False},
+  {"id":"buy","emoji":"🥚","name":"买鸡蛋","color":"green","unit":"个","presets":[{"label":"一盒","value":30},{"label":"两盒","value":60}],"goal":None,"archived":False},
+  {"id":"move","emoji":"🚶","name":"散步","color":"orange","unit":"分钟","presets":[{"label":"30","value":30},{"label":"60","value":60}],"goal":None,"archived":False},
 ]
 body = json.dumps(ITEMS, ensure_ascii=False)
 src, n = re.subn(r"function defaultItems\(\)\{\s*return \[.*?\n  \];\n\}",
