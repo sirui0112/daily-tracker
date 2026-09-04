@@ -1519,17 +1519,8 @@ window.addEventListener("unhandledrejection", function(e){
 if(!(window.claude && typeof window.claude.use === "function") && "serviceWorker" in navigator){
   window.addEventListener("load", function(){
     navigator.serviceWorker.register("./sw.js").then(function(reg){
-      reg.addEventListener("updatefound", function(){
-        var w = reg.installing;
-        if(!w) return;
-        w.addEventListener("statechange", function(){
-          /* 有 controller 才说明是"更新"而不是"首次安装"。不自动刷新——
-             你可能正记到一半，页面突然重载会很烦。 */
-          if(w.state === "installed" && navigator.serviceWorker.controller){
-            toast("应用已更新，下次打开生效", null);
-          }
-        });
-      });
+      /* 不提示"有新版本"：页面本体是网络优先的，刷新拿到的就是最新版，
+         没有需要用户处理的事情。 */
     })["catch"](function(){});
   });
   /* 申请持久化存储：iOS 会清理长期未访问站点的数据 */

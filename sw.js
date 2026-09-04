@@ -4,7 +4,7 @@
  * 旧缓存在 activate 时清掉——所以不需要手工维护版本号，也就忘不掉。
  * 这是缓存优先策略最经典的翻车点：忘了改版本号，用户会永远停在旧版本上。
  */
-const BUILD = "ebcb1154113b";
+const BUILD = "11c761817b53";
 const CACHE = "daily-tracker-" + BUILD;
 
 const SHELL = [
@@ -35,6 +35,35 @@ self.addEventListener("activate", function(e){
   );
 });
 
+/* 页面本体走网络优先。缓存优先会让你在联网时仍然看到旧版本、必须刷两次才更新——
+   HTML 才 70KB，为这点速度换来"改了却看不到"的困惑不值得。
+   断网时自动退回缓存，离线可用不受影响。 */
+function networkFirst(req){
+  var timeout = new Promise(function(res){ setTimeout(function(){ res(null); }, 3500); });
+  var net = fetch(req).then(function(r){
+    var copy = r.clone();
+    caches.open(CACHE).then(function(c){ c.put(req, copy); });
+    return r;
+  })["catch"](function(){ return null; });
+  return Promise.race([net, timeout]).then(function(r){
+    if(r) return r;
+    return caches.match(req).then(function(hit){ return hit || caches.match("./index.html"); });
+  });
+}
+
+function cacheFirst(req, isFont){
+  return caches.match(req).then(function(hit){
+    if(hit) return hit;
+    return fetch(req).then(function(res){
+      if(isFont && (res.ok || res.type === "opaque")){
+        var copy = res.clone();
+        caches.open(CACHE).then(function(c){ c.put(req, copy); });
+      }
+      return res;
+    })["catch"](function(){ return Response.error(); });
+  });
+}
+
 self.addEventListener("fetch", function(e){
   var req = e.request;
   if(req.method !== "GET") return;
@@ -43,20 +72,9 @@ self.addEventListener("fetch", function(e){
   var isFont = FONT_HOSTS.indexOf(url.origin) >= 0;
   if(url.origin !== self.location.origin && !isFont) return;
 
-  e.respondWith(
-    caches.match(req).then(function(hit){
-      if(hit) return hit;
-      return fetch(req).then(function(res){
-        if(isFont && (res.ok || res.type === "opaque")){
-          var copy = res.clone();
-          caches.open(CACHE).then(function(c){ c.put(req, copy); });
-        }
-        return res;
-      })["catch"](function(){
-        /* 离线且没缓存：导航请求退回应用外壳，其余放弃 */
-        if(req.mode === "navigate") return caches.match("./index.html");
-        return Response.error();
-      });
-    })
-  );
+  if(req.mode === "navigate" || url.pathname.slice(-5) === ".html"){
+    e.respondWith(networkFirst(req));      /* 页面：最新优先 */
+  } else {
+    e.respondWith(cacheFirst(req, isFont)); /* 图标和字体：缓存优先，它们几乎不变 */
+  }
 });

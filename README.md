@@ -55,7 +55,7 @@ GitHub Pages，从 `main` 分支根目录直接部署，没有 CI。`index.html`
 已经是可安装的 PWA：手机浏览器打开 → 分享 → 添加到主屏幕，之后从图标启动是全屏的，**断网也能打开**（前提是联网打开过至少一次）。
 
 - `manifest.json` — 应用名、图标、`display: standalone`
-- `sw.js` — 缓存应用外壳和 Google Fonts；缓存名由 `build.py` 注入
+- `sw.js` — **页面本体网络优先**（联网时永远是最新版，断网退回缓存），图标和字体缓存优先；缓存名由 `build.py` 注入
 - `tools/make-icons.py` — 纯 Python 生成图标，无第三方依赖，改了配色重跑即可
 
 **iOS 注意**：主屏应用的存储空间和 Safari 可能是分开的，所以要装就一开始装，别先在 Safari 里记一堆再添加。
