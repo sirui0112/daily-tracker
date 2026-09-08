@@ -877,48 +877,75 @@ function roundedTop(x,y,w,h,r){
 function renderTrends(){
   var n = state.range, keys = [], i;
   for(i=n-1;i>=0;i--) keys.push(shiftKey(todayKey(), -i));
-  var out = "";
-  var items = liveItems();
-  var anyData = false;
+  var out = "", anyGoal = false, anyData = false;
 
-  items.forEach(function(it){
+  /* 固定拿最近 7 个完整天（不含今天，今天还没过完）对比之前 7 天。
+     不随所选范围变化，这样这个百分比的含义永远一致。 */
+  function weekSum(itemId, startOffset){
+    var t = 0;
+    for(var d = 0; d < 7; d++) t += dayTotal(itemId, shiftKey(todayKey(), -(startOffset + d)));
+    return t;
+  }
+
+  /* 开始用这个应用之前的日子不算"漏"——否则刚装上就是"达标 0 / 30 天" */
+  var firstKey = null, k;
+  for(k in state.days){ if(dayEvents(k).length && (!firstKey || k < firstKey)) firstKey = k; }
+  var startIdx = n;
+  if(firstKey){ startIdx = 0; while(startIdx < n && keys[startIdx] < firstKey) startIdx++; }
+
+  liveItems().forEach(function(it){
     var vals = keys.map(function(k){ return dayTotal(it.id,k); });
     var sum = vals.reduce(function(a,b){ return a+b; }, 0);
-    if(sum <= 0) return;
+    /* 有目标的项目即使一条没记也要画——整段空白正是最该看见的"漏" */
+    if(sum <= 0 && !it.goal) return;
     anyData = true;
-    var max = Math.max.apply(null, vals);
-    var ceiling = Math.max(max, it.goal || 0) || 1;
+    if(it.goal) anyGoal = true;
+
+    var ceiling = Math.max(Math.max.apply(null, vals), it.goal || 0) || 1;
     var W = 320, H = 96, TOP = 18, BOT = 16, PH = H - TOP - BOT;
     var gap = 2, bw = (W - gap*(n-1)) / n;
-    var svg = "";
+    var svg = "", met = 0;
 
-    /* goal line, drawn under the bars */
     if(it.goal){
       var gy = TOP + PH - (it.goal/ceiling)*PH;
       svg += '<line x1="0" y1="'+round1(gy)+'" x2="'+W+'" y2="'+round1(gy)+'" stroke-dasharray="3 3" stroke-width="1" style="stroke:var(--grid-fade)"/>';
       svg += '<text x="0" y="'+round1(gy-4)+'" text-anchor="start" font-size="9" font-family="IBM Plex Mono, monospace" style="fill:var(--ink-3)">目标 '+fmtNum(it.goal)+'</text>';
     }
-    /* baseline */
     svg += '<line x1="0" y1="'+(TOP+PH)+'" x2="'+W+'" y2="'+(TOP+PH)+'" stroke-width="1" style="stroke:var(--grid-fade)"/>';
 
+    var hs = [];
     vals.forEach(function(v, idx){
-      var x = idx*(bw+gap);
-      var h = v>0 ? Math.max(3, (v/ceiling)*PH) : 0;
-      var y = TOP + PH - h;
-      if(h>0){
-        svg += '<path class="bar" d="'+roundedTop(round1(x), round1(y), round1(bw), round1(h), 4)+'" style="fill:'+cvar(it.color)+'"/>';
+      var x = idx*(bw+gap), pre = idx < startIdx;
+      var miss = (it.goal && !pre) ? (v < it.goal) : false;
+      if(it.goal && !pre && !miss) met++;
+      /* 有目标时，0 记录的那天也画一截矮桩——否则最严重的漏反而是隐形的。
+         但启用之前的日子什么都不画，那不是漏。 */
+      var h = v > 0 ? Math.max(3, (v/ceiling)*PH) : ((it.goal && !pre) ? 3 : 0);
+      hs.push(h);
+      if(h > 0){
+        svg += '<path class="bar" d="'+roundedTop(round1(x), round1(TOP+PH-h), round1(bw), round1(h), 4)
+             + '" style="fill:'+cvar(it.color)+(miss ? ';fill-opacity:.28' : '')+'"/>';
       }
       svg += '<rect class="hit" x="'+round1(x-gap/2)+'" y="'+TOP+'" width="'+round1(bw+gap)+'" height="'+PH+'" fill="transparent" data-i="'+idx+'"><title>'+esc(humanDate(keys[idx]))+' · '+esc(totalLabel(it, v))+'</title></rect>';
     });
 
-    /* emphasized endpoint: direct label on the last day */
+    /* 7 天移动平均：单天波动大时才看得出真实走向。7 天范围下只有一个点，画了是骗人的 */
+    if(n >= 14){
+      var pts = [];
+      for(i = Math.max(6, startIdx + 6); i < n; i++){
+        var w = 0;
+        for(var j = i-6; j <= i; j++) w += vals[j];
+        pts.push(round1(i*(bw+gap)+bw/2) + " " + round1(TOP + PH - (w/7/ceiling)*PH));
+      }
+      if(pts.length > 1){
+        svg += '<path d="M'+pts.join(" L")+'" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--ink-2)" opacity=".5"/>';
+      }
+    }
+
     var lastV = vals[n-1];
     if(lastV > 0){
-      var lx = (n-1)*(bw+gap) + bw/2;
-      var ly = TOP + PH - Math.max(3,(lastV/ceiling)*PH) - 5;
-      svg += '<text x="'+round1(lx)+'" y="'+round1(ly)+'" text-anchor="end" font-size="10" font-weight="600" font-family="IBM Plex Mono, monospace" style="fill:var(--ink)">'+fmtNum(lastV)+'</text>';
+      svg += '<text x="'+round1((n-1)*(bw+gap)+bw/2)+'" y="'+round1(TOP+PH-hs[n-1]-5)+'" text-anchor="end" font-size="10" font-weight="600" font-family="IBM Plex Mono, monospace" style="fill:var(--ink)">'+fmtNum(lastV)+'</text>';
     }
-    /* x labels: first / middle / last */
     [0, Math.floor((n-1)/2), n-1].forEach(function(idx, j){
       var d = dateOf(keys[idx]);
       var anchor = j===0 ? "start" : (j===2 ? "end" : "middle");
@@ -926,23 +953,35 @@ function renderTrends(){
       svg += '<text x="'+round1(x)+'" y="'+(H-3)+'" text-anchor="'+anchor+'" font-size="9" font-family="IBM Plex Mono, monospace" style="fill:var(--ink-3)">'+(d.getMonth()+1)+"/"+d.getDate()+'</text>';
     });
 
-    var activeDays = vals.filter(function(v){ return v>0; }).length;
-    var stat = it.unit ? (fmtNum(round1(sum/n))+" "+it.unit) : (fmtNum(round1(sum/n))+" 次");
+    /* 结论行 */
+    var parts = [];
+    var tracked = n - startIdx;
+    parts.push(it.goal ? ("达标 " + met + " / " + tracked + " 天")
+                       : (tracked + " 天里记了 " + vals.filter(function(v){ return v>0; }).length + " 天"));
+    var cur = weekSum(it.id, 1), prev = weekSum(it.id, 8);
+    if(prev > 0 && cur > 0){
+      var pct = Math.round((cur - prev) / prev * 100);
+      if(pct !== 0) parts.push("比上周 " + (pct > 0 ? "↑" : "↓") + " " + Math.abs(pct) + "%");
+      else parts.push("和上周持平");
+    }
+
+    var stat = fmtNum(round1(sum/n)) + (it.unit ? " "+it.unit : " 次");
     out += '<div class="tcard" data-trend="'+esc(it.id)+'">'
          +   '<div class="tcard-head"><span class="t-emo">'+esc(it.emoji)+'</span>'
          +     '<span class="t-name">'+esc(it.name)+'</span>'
-         +     '<span class="t-stat">日均 <b>'+stat+'</b></span></div>'
-         +   '<div class="readout" data-readout>'+n+' 天里有 '+activeDays+' 天记了 · 共 '+esc(totalLabel(it,round1(sum)))+'</div>'
+         +     '<span class="t-stat">日均 <b>'+esc(stat)+'</b></span></div>'
+         +   '<div class="readout" data-readout>'+esc(parts.join(" · "))+'</div>'
          +   '<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="'+esc(it.name)+' 最近'+n+'天">'+svg+'</svg>'
          + '</div>';
   });
 
   if(!anyData){
     out = '<div class="empty" style="margin-top:14px">最近 '+n+' 天还没有数据。<br>去「现在」记上几条，这里就会长出曲线。</div>';
+  } else if(anyGoal){
+    out += '<p class="hint" style="text-align:center">浅色柱 = 当天没达标'+(n >= 14 ? ' · 灰线 = 7 天平均' : '')+'</p>';
   }
   $("trends").innerHTML = out;
 
-  /* hover / tap readout */
   Array.prototype.forEach.call($("trends").querySelectorAll(".tcard"), function(card){
     var it = getItem(card.getAttribute("data-trend"));
     var ro = card.querySelector("[data-readout]"), base = ro.textContent;
