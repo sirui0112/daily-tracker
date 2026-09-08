@@ -287,6 +287,11 @@ h1,h2,h3{text-wrap:balance;margin:0}
 }
 .daysum[data-filtering="1"] .pill[aria-pressed="false"]{opacity:.45}
 .daysum .pill .x{margin-left:2px;color:var(--ink-2);font-size:13px;line-height:1}
+.daygroup{
+  margin:12px 2px 6px;
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11px;letter-spacing:.1em;color:var(--ink-3);
+}
 
 /* ---------- trends ---------- */
 .rangebar{display:inline-flex;padding:3px;border-radius:11px;background:var(--surface);border:1px solid var(--line);gap:2px}
@@ -624,7 +629,8 @@ var state = {
   db: null,
   syncPushed: false,
   lastExport: null,
-  dayFilter: null      /* 「今天」页只看某一个项目；null = 全部 */
+  dayFilter: null,     /* 「今天」页只看某一个项目；null = 全部 */
+  filterBack: 7        /* 筛选时往前回溯几天 */
 };
 var lastAction = null, toastTimer = null;
 
@@ -852,6 +858,26 @@ function entryRow(e, k){
 }
 
 /* ================= render: 今天 ================= */
+/* 该项目最早有记录的那天——用来判断「看更早」还有没有东西可看 */
+function oldestKeyFor(itemId){
+  var best = null, k, evs, i;
+  for(k in state.days){
+    evs = dayEvents(k);
+    for(i=0;i<evs.length;i++){
+      if(evs[i].itemId === itemId){ if(!best || k < best) best = k; break; }
+    }
+  }
+  return best;
+}
+function countBack(itemId, k, back){
+  var n = 0, i, j, lst;
+  for(i=0;i<back;i++){
+    lst = dayEvents(shiftKey(k,-i));
+    for(j=0;j<lst.length;j++) if(lst[j].itemId === itemId) n++;
+  }
+  return n;
+}
+
 function renderDay(){
   var k = state.viewDate;
   $("dayLabel").textContent = humanDate(k);
@@ -863,9 +889,9 @@ function renderDay(){
   var evs = dayEvents(k);
   var byItem = {};
   evs.forEach(function(e){ if(e.itemId !== NOTE_ITEM.id) byItem[e.itemId] = true; });
-
-  /* 该项目今天没记录了（比如刚被删光），过期的筛选要撤掉 */
-  if(state.dayFilter && !byItem[state.dayFilter]) state.dayFilter = null;
+  /* 换日期时筛选是保留的，所以当天可能根本没有该项目的记录。
+     强制把选中项目的胶囊渲染出来（哪怕是 0），否则筛选既看不见也取消不掉。 */
+  if(state.dayFilter) byItem[state.dayFilter] = true;
 
   var sum = "";
   Object.keys(byItem).forEach(function(id){
@@ -878,19 +904,50 @@ function renderDay(){
   $("daySum").innerHTML = sum;
   $("daySum").setAttribute("data-filtering", state.dayFilter ? "1" : "0");
 
-  var shown = state.dayFilter
-    ? evs.filter(function(e){ return e.itemId === state.dayFilter; })
-    : evs;
-
-  if(!evs.length){
-    $("dayList").innerHTML = '<div class="empty">'+esc(humanDate(k))+'没有记录。忘了记也没关系，下面可以补。</div>';
+  var html = "";
+  if(!state.dayFilter){
+    html = evs.length
+      ? '<div class="entries">' + evs.slice().reverse().map(function(e){ return entryRow(e,k); }).join("") + '</div>'
+      : '<div class="empty">'+esc(humanDate(k))+'没有记录。忘了记也没关系，下面可以补。</div>';
   } else {
-    $("dayList").innerHTML = '<div class="entries">' + shown.slice().reverse().map(function(e){ return entryRow(e,k); }).join("") + '</div>';
+    var fit = getItem(state.dayFilter), back = state.filterBack, groups = "", shown = 0, i;
+    html = '<p class="hint" style="margin:0 2px 2px">'+esc(fit.emoji+" "+fit.name)+' · 最近 '+back+' 天</p>';
+    for(i=0;i<back;i++){
+      var dk = shiftKey(k,-i);
+      var list = dayEvents(dk).filter(function(e){ return e.itemId === state.dayFilter; });
+      if(!list.length) continue;
+      shown += list.length;
+      groups += '<div class="daygroup">'+esc(humanDate(dk))+'</div>'
+              + '<div class="entries">' + list.slice().reverse().map(function(e){ return entryRow(e,dk); }).join("") + '</div>';
+    }
+    html += shown ? groups
+                  : '<div class="empty">最近 '+back+' 天没有'+esc(fit.name)+'的记录。</div>';
+    var oldest = oldestKeyFor(state.dayFilter);
+    if(oldest && oldest < shiftKey(k, -(back-1))){
+      html += '<button class="linkbtn" id="filterMore" style="display:block;margin:16px auto 0">看更早 ↓</button>';
+    }
   }
+  $("dayList").innerHTML = html;
 }
 
-/* 换日期时清掉筛选：另一天多半没有同一个项目，留着只会看到空列表 */
-function setDay(k){ state.viewDate = k; state.dayFilter = null; renderDay(); }
+/* 每次点「看更早」都必须有新东西出现。往前 7 天正好是空档时继续往前推，
+   否则点了没反应，看着像坏了。 */
+function extendFilter(){
+  if(!state.dayFilter) return;
+  var k = state.viewDate, id = state.dayFilter;
+  var oldest = oldestKeyFor(id), before = countBack(id, k, state.filterBack);
+  var back = state.filterBack, guard;
+  for(guard=0; guard<60; guard++){
+    back += 7;
+    if(countBack(id, k, back) > before) break;
+    if(!oldest || shiftKey(k, -(back-1)) <= oldest) break;
+  }
+  state.filterBack = back;
+  renderDay();
+}
+
+/* 换日期保留筛选（筛选现在是跨天视图，等于移动截止日），但回溯窗口重新从 7 天算起 */
+function setDay(k){ state.viewDate = k; state.filterBack = 7; renderDay(); }
 
 /* ================= render: 趋势 ================= */
 function roundedTop(x,y,w,h,r){
@@ -1460,9 +1517,11 @@ document.addEventListener("click", function(ev){
   if((el = t.closest("[data-filter]"))){
     var fid = el.getAttribute("data-filter");
     state.dayFilter = (state.dayFilter === fid) ? null : fid;   /* 再点一次取消 */
+    state.filterBack = 7;
     renderDay();
     return;
   }
+  if(t.closest("#filterMore")){ extendFilter(); return; }
   if(t.closest("#exportBtn")){ exportSheet(); return; }
   if(t.closest("#importBtn")){ importSheet(); return; }
   if(t.closest("#addFromGrid") || t.closest("#newItemBtn")){ itemSheet(null); return; }
