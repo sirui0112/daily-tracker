@@ -279,6 +279,14 @@ h1,h2,h3{text-wrap:balance;margin:0}
   font-size:12.5px;
 }
 .daysum .pill b{font-family:"IBM Plex Mono",monospace;font-weight:600;font-variant-numeric:tabular-nums}
+.daysum .pill{cursor:pointer;transition:opacity .12s ease,background .12s ease,transform .1s ease}
+.daysum .pill:active{transform:scale(.96)}
+.daysum .pill[aria-pressed="true"]{
+  background:color-mix(in srgb,var(--c) 30%,var(--surface));
+  border-color:color-mix(in srgb,var(--c) 55%,var(--line));
+}
+.daysum[data-filtering="1"] .pill[aria-pressed="false"]{opacity:.45}
+.daysum .pill .x{margin-left:2px;color:var(--ink-2);font-size:13px;line-height:1}
 
 /* ---------- trends ---------- */
 .rangebar{display:inline-flex;padding:3px;border-radius:11px;background:var(--surface);border:1px solid var(--line);gap:2px}
@@ -615,7 +623,8 @@ var state = {
   range: 14,
   db: null,
   syncPushed: false,
-  lastExport: null
+  lastExport: null,
+  dayFilter: null      /* 「今天」页只看某一个项目；null = 全部 */
 };
 var lastAction = null, toastTimer = null;
 
@@ -854,19 +863,34 @@ function renderDay(){
   var evs = dayEvents(k);
   var byItem = {};
   evs.forEach(function(e){ if(e.itemId !== NOTE_ITEM.id) byItem[e.itemId] = true; });
+
+  /* 该项目今天没记录了（比如刚被删光），过期的筛选要撤掉 */
+  if(state.dayFilter && !byItem[state.dayFilter]) state.dayFilter = null;
+
   var sum = "";
   Object.keys(byItem).forEach(function(id){
-    var it = getItem(id), n = dayTotal(id, k);
-    sum += '<span class="pill" style="--c:'+cvar(it.color)+'">'+esc(it.emoji)+' '+esc(it.name)+' <b>'+totalLabel(it,n)+'</b></span>';
+    var it = getItem(id), n = dayTotal(id, k), on = state.dayFilter === id;
+    sum += '<button class="pill" data-filter="'+esc(id)+'" aria-pressed="'+(on?"true":"false")+'"'
+         + ' style="--c:'+cvar(it.color)+'">'+esc(it.emoji)+' '+esc(it.name)+' <b>'+totalLabel(it,n)+'</b>'
+         + (on ? '<span class="x" aria-hidden="true">×</span>' : '')
+         + '</button>';
   });
   $("daySum").innerHTML = sum;
+  $("daySum").setAttribute("data-filtering", state.dayFilter ? "1" : "0");
+
+  var shown = state.dayFilter
+    ? evs.filter(function(e){ return e.itemId === state.dayFilter; })
+    : evs;
 
   if(!evs.length){
     $("dayList").innerHTML = '<div class="empty">'+esc(humanDate(k))+'没有记录。忘了记也没关系，下面可以补。</div>';
   } else {
-    $("dayList").innerHTML = '<div class="entries">' + evs.slice().reverse().map(function(e){ return entryRow(e,k); }).join("") + '</div>';
+    $("dayList").innerHTML = '<div class="entries">' + shown.slice().reverse().map(function(e){ return entryRow(e,k); }).join("") + '</div>';
   }
 }
+
+/* 换日期时清掉筛选：另一天多半没有同一个项目，留着只会看到空列表 */
+function setDay(k){ state.viewDate = k; state.dayFilter = null; renderDay(); }
 
 /* ================= render: 趋势 ================= */
 function roundedTop(x,y,w,h,r){
@@ -1433,6 +1457,12 @@ document.addEventListener("click", function(ev){
     if(e) logSheet(e.itemId, {editing:{k:parts[0], id:parts[1]}});
     return;
   }
+  if((el = t.closest("[data-filter]"))){
+    var fid = el.getAttribute("data-filter");
+    state.dayFilter = (state.dayFilter === fid) ? null : fid;   /* 再点一次取消 */
+    renderDay();
+    return;
+  }
   if(t.closest("#exportBtn")){ exportSheet(); return; }
   if(t.closest("#importBtn")){ importSheet(); return; }
   if(t.closest("#addFromGrid") || t.closest("#newItemBtn")){ itemSheet(null); return; }
@@ -1440,9 +1470,9 @@ document.addEventListener("click", function(ev){
   if((el = t.closest("[data-goto]"))){ setView(el.getAttribute("data-goto")); return; }
   if((el = t.closest(".tab"))){ setView(el.getAttribute("data-tab")); return; }
 
-  if(t.closest("#dayPrev")){ state.viewDate = shiftKey(state.viewDate,-1); renderDay(); return; }
-  if(t.closest("#dayNext")){ if(state.viewDate < todayKey()){ state.viewDate = shiftKey(state.viewDate,1); renderDay(); } return; }
-  if(t.closest("#dayToday")){ state.viewDate = todayKey(); renderDay(); return; }
+  if(t.closest("#dayPrev")){ setDay(shiftKey(state.viewDate,-1)); return; }
+  if(t.closest("#dayNext")){ if(state.viewDate < todayKey()) setDay(shiftKey(state.viewDate,1)); return; }
+  if(t.closest("#dayToday")){ setDay(todayKey()); return; }
 
   if((el = t.closest("#rangebar button"))){
     state.range = +el.getAttribute("data-range");
@@ -1490,7 +1520,7 @@ $("noteForm").addEventListener("submit", function(ev){
   logEvent(NOTE_ITEM.id, {note: v});
 });
 $("dayPicker").addEventListener("change", function(){
-  if(this.value){ state.viewDate = this.value; renderDay(); }
+  if(this.value) setDay(this.value);
 });
 
 /* ================= cloud ================= */
